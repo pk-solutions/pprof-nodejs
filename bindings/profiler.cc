@@ -260,29 +260,35 @@ Local<Value> TranslateTimeProfile(const CpuProfile* profile,
 // Signature:
 // startProfiling(runName: string, includeLineInfo: boolean)
 NAN_METHOD(StartProfiling) {
-  if (info.Length() != 2) {
-    return Nan::ThrowTypeError("StartProfiling must have two arguments.");
+  if (info.Length() != 3) {
+    return Nan::ThrowTypeError("StartProfiling must have three arguments.");
   }
   if (!info[0]->IsString()) {
     return Nan::ThrowTypeError("First argument must be a string.");
   }
-  if (!info[1]->IsBoolean()) {
-    return Nan::ThrowTypeError("Second argument must be a boolean.");
+  if (!info[1]->IsString()) {
+    return Nan::ThrowTypeError("Second argument must be a string.");
+  }
+  if (!info[2]->IsBoolean()) {
+    return Nan::ThrowTypeError("Third argument must be a boolean.");
   }
 
+  bool existed = true;
 #if NODE_MODULE_VERSION >= NODE_12_0_MODULE_VERSION
   // Since the CPU profiler is created and destroyed each time a CPU
   // profile is collected, there cannot be multiple CPU profiling requests
   // inflight in parallel.
-  if (cpuProfiler) {
-    return Nan::ThrowError("CPU profiler is already started.");
+  if (!cpuProfiler) {
+    existed = false;
+    cpuProfiler = CpuProfiler::New(v8::Isolate::GetCurrent());
+    cpuProfiler->SetSamplingInterval(samplingIntervalUS);
   }
-  cpuProfiler = CpuProfiler::New(v8::Isolate::GetCurrent());
-  cpuProfiler->SetSamplingInterval(samplingIntervalUS);
 #endif
 
   Local<String> name =
       Nan::MaybeLocal<String>(info[0].As<String>()).ToLocalChecked();
+  Local<String> name2 =
+      Nan::MaybeLocal<String>(info[1].As<String>()).ToLocalChecked();
 
   // Sample counts and timestamps are not used, so we do not need to record
   // samples.
@@ -291,12 +297,15 @@ NAN_METHOD(StartProfiling) {
 // Line level accurate line information is not available in Node 11 or earlier.
 #if NODE_MODULE_VERSION > NODE_11_0_MODULE_VERSION
   bool includeLineInfo =
-      Nan::MaybeLocal<Boolean>(info[1].As<Boolean>()).ToLocalChecked()->Value();
+      Nan::MaybeLocal<Boolean>(info[2].As<Boolean>()).ToLocalChecked()->Value();
   if (includeLineInfo) {
     cpuProfiler->StartProfiling(name, CpuProfilingMode::kCallerLineNumbers,
                                 recordSamples);
   } else {
     cpuProfiler->StartProfiling(name, recordSamples);
+  }
+  if (existed) {
+    cpuProfiler->StopProfiling(name2);
   }
 #else
   cpuProfiler->StartProfiling(name, recordSamples);
@@ -311,29 +320,30 @@ NAN_METHOD(StopProfiling) {
     return Nan::ThrowError("StopProfiling called without an active CPU profiler.");
   }
 #endif
-  if (info.Length() != 2) {
-    return Nan::ThrowTypeError("StopProfling must have two arguments.");
+  if (info.Length() != 3) {
+    return Nan::ThrowTypeError("StopProfling must have three arguments.");
   }
   if (!info[0]->IsString()) {
     return Nan::ThrowTypeError("First argument must be a string.");
   }
-  if (!info[1]->IsBoolean()) {
-    return Nan::ThrowTypeError("Second argument must be a boolean.");
+  if (!info[1]->IsString()) {
+    return Nan::ThrowTypeError("Second argument must be a string.");
+  }
+  if (!info[2]->IsBoolean()) {
+    return Nan::ThrowTypeError("Third argument must be a boolean.");
   }
   Local<String> name =
       Nan::MaybeLocal<String>(info[0].As<String>()).ToLocalChecked();
+  Local<String> name2 =
+      Nan::MaybeLocal<String>(info[1].As<String>()).ToLocalChecked();
   bool includeLineInfo =
-      Nan::MaybeLocal<Boolean>(info[1].As<Boolean>()).ToLocalChecked()->Value();
+      Nan::MaybeLocal<Boolean>(info[2].As<Boolean>()).ToLocalChecked()->Value();
 
+  cpuProfiler->StartProfiling(name2, false);
   CpuProfile* profile = cpuProfiler->StopProfiling(name);
   Local<Value> translated_profile =
       TranslateTimeProfile(profile, includeLineInfo);
   profile->Delete();
-#if NODE_MODULE_VERSION >= NODE_12_0_MODULE_VERSION
-  // Dispose of CPU profiler to work around memory leak.
-  cpuProfiler->Dispose();
-  cpuProfiler = NULL;
-#endif
   info.GetReturnValue().Set(translated_profile);
 }
 
