@@ -6,7 +6,7 @@
   "main": "out/src/index.js",
   "types": "out/src/index.d.ts",
   "scripts": {
-    "install": "node-pre-gyp install --fallback-to-build",
+    "install": "node-pre-gyp install --fallback-to-build && tsc -p .",
     "test": "nyc mocha  out/test/test-*.js",
     "check": "gts check",
     "clean": "gts clean && node-gyp clean",
